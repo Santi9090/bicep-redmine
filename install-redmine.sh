@@ -92,7 +92,7 @@ log ""
 # =============================================================================
 
 log ""
-log "[1/12] Actualizando sistema..."
+log "[1/13] Actualizando sistema..."
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >> "$LOG_FILE" 2>&1 || error "Error actualizando package list"
@@ -101,11 +101,79 @@ apt-get upgrade -y -o Dpkg::Options::="--force-confnew" >> "$LOG_FILE" 2>&1 || e
 success "Sistema actualizado"
 
 # =============================================================================
+# PASO 1.5: VERIFICAR CONECTIVIDAD A INTERNET (CRÍTICO)
+# =============================================================================
+
+log ""
+log "[1.5/13] Verificando conectividad a internet..."
+
+echo ""
+echo "═══ DIAGNÓSTICO DE CONECTIVIDAD ═══"
+echo ""
+
+# Verificar DNS
+log "  1. Verificando DNS..."
+if host rubygems.org >/dev/null 2>&1; then
+    echo "✓ DNS funciona - rubygems.org resuelve a: $(host rubygems.org | grep 'has address' | head -1 | awk '{print $4}')"
+else
+    echo "❌ DNS NO FUNCIONA - No puede resolver rubygems.org"
+    echo "  Intentando con DNS de Google..."
+    echo "nameserver 8.8.8.8" > /etc/resolv.conf.tmp
+    echo "nameserver 8.8.4.4" >> /etc/resolv.conf.tmp
+    cat /etc/resolv.conf >> /etc/resolv.conf.tmp
+    mv /etc/resolv.conf.tmp /etc/resolv.conf
+    echo "✓ DNS configurado a Google DNS"
+fi
+
+# Verificar conectividad HTTPS general
+log "  2. Verificando conectividad HTTPS..."
+if curl -I --connect-timeout 10 -m 15 https://www.google.com/ >/dev/null 2>&1; then
+    echo "✓ HTTPS funciona - Puede conectar a google.com:443"
+else
+    echo "❌ HTTPS NO FUNCIONA - Puerto 443 puede estar bloqueado"
+    warning "Puerto 443 (HTTPS) parece bloqueado por firewall"
+fi
+
+# Verificar conectividad específica a rubygems.org
+log "  3. Verificando acceso a rubygems.org..."
+if curl -I --connect-timeout 15 -m 20 https://rubygems.org/ >/dev/null 2>&1; then
+    echo "✓ rubygems.org ACCESIBLE"
+else
+    echo "❌ NO PUEDE CONECTAR A rubygems.org"
+    echo ""
+    echo "  Probando con timeouts más largos..."
+    if curl -I --connect-timeout 30 -m 45 https://rubygems.org/ 2>&1 | head -5; then
+        echo "✓ rubygems.org accesible con timeout largo"
+        export BUNDLE_TIMEOUT=300
+        export GEM_HTTP_TIMEOUT=300
+        echo "  Configurando timeouts largos para bundle install"
+    else
+        error "Cannot connect to rubygems.org - Verifique firewall y NSG en Azure"
+    fi
+fi
+
+# Verificar index.rubygems.org específicamente
+log "  4. Verificando index.rubygems.org..."
+if curl -I --connect-timeout 15 -m 20 https://index.rubygems.org/ >/dev/null 2>&1; then
+    echo "✓ index.rubygems.org ACCESIBLE"
+else
+    echo "⚠ index.rubygems.org lento o bloqueado, configurando timeouts largos"
+    export BUNDLE_TIMEOUT=300
+    export GEM_HTTP_TIMEOUT=300
+fi
+
+echo ""
+echo "═══ FIN DIAGNÓSTICO ═══"
+echo ""
+
+success "Conectividad verificada"
+
+# =============================================================================
 # PASO 2: INSTALAR DEPENDENCIAS BASE
 # =============================================================================
 
 log ""
-log "[2/12] Instalando dependencias base..."
+log "[2/13] Instalando dependencias base..."
 
 PACKAGES=(
     "build-essential"
@@ -142,7 +210,7 @@ success "Dependencias base instaladas"
 # =============================================================================
 
 log ""
-log "[3/12] Instalando Ruby..."
+log "[3/13] Instalando Ruby..."
 
 if ! command -v ruby &> /dev/null; then
     apt-get install -y ruby ruby-dev ruby-bundler >> "$LOG_FILE" 2>&1 || error "Error instalando Ruby"
@@ -159,6 +227,11 @@ if ! command -v bundle &> /dev/null; then
     gem install bundler --no-document >> "$LOG_FILE" 2>&1 || error "Error instalando bundler"
 fi
 
+# Prevenir conflictos de gemas "default" en Passenger (base64, bigdecimal, etc)
+log "  Actualizando gemas default para evitar conflictos..."
+gem install base64 -v 0.3.0 --no-document >> "$LOG_FILE" 2>&1 || true
+gem install bigdecimal mutex_m drb --no-document >> "$LOG_FILE" 2>&1 || true
+
 success "Ruby instalado: $(ruby --version 2>/dev/null)"
 
 # =============================================================================
@@ -166,7 +239,7 @@ success "Ruby instalado: $(ruby --version 2>/dev/null)"
 # =============================================================================
 
 log ""
-log "[4/12] Instalando y configurando MySQL..."
+log "[4/13] Instalando y configurando MySQL..."
 
 if ! command -v mysql &> /dev/null; then
     log "  MySQL no encontrado. Instalando..."
@@ -212,7 +285,7 @@ fi
 # =============================================================================
 
 log ""
-log "[5/12] Instalando Apache..."
+log "[5/13] Instalando Apache..."
 
 if ! command -v apache2ctl &> /dev/null; then
     apt-get install -y apache2 apache2-dev >> "$LOG_FILE" 2>&1 || error "Error instalando Apache"
@@ -229,7 +302,7 @@ success "Apache instalado"
 # =============================================================================
 
 log ""
-log "[6/12] Instalando Passenger..."
+log "[6/13] Instalando Passenger..."
 
 if ! dpkg -l 2>/dev/null | grep -q libapache2-mod-passenger; then
     apt-get install -y libapache2-mod-passenger >> "$LOG_FILE" 2>&1 || error "Error instalando Passenger"
@@ -248,7 +321,7 @@ fi
 # =============================================================================
 
 log ""
-log "[7/12] Descargando Redmine 6.1-stable..."
+log "[7/13] Descargando Redmine 6.1-stable..."
 
 if [ ! -d "$REDMINE_DIR" ]; then
     git clone --depth=1 -b 6.1-stable https://github.com/redmine/redmine.git "$REDMINE_DIR" >> "$LOG_FILE" 2>&1 || error "Error descargando Redmine"
@@ -262,7 +335,7 @@ fi
 # =============================================================================
 
 log ""
-log "[8/12] Configurando directorios y permisos..."
+log "[8/13] Configurando directorios y permisos..."
 
 echo ""
 echo "Creando directorios necesarios..."
@@ -289,14 +362,12 @@ echo ""
 
 success "Directorios configurados"
 
-success "Directorios configurados"
-
 # =============================================================================
 # PASO 9: CONFIGURAR database.yml
 # =============================================================================
 
 log ""
-log "[9/12] Configurando database.yml..."
+log "[9/13] Configurando database.yml..."
 
 cat > "$REDMINE_DIR/config/database.yml" <<'EOF'
 production:
@@ -345,7 +416,7 @@ success "database.yml configurado"
 # =============================================================================
 
 log ""
-log "[9.5/12] Verificando requisitos previos para bundler..."
+log "[9.5/13] Verificando requisitos previos para bundler..."
 
 # Verificar que Gemfile existe
 if [ ! -f "$REDMINE_DIR/Gemfile" ]; then
@@ -426,7 +497,7 @@ success "Verificación pre-bundler completada"
 # =============================================================================
 
 log ""
-log "[10/12] Instalando gemas de Redmine (BUNDLE INSTALL)..."
+log "[10/13] Instalando gemas de Redmine (BUNDLE INSTALL)..."
 log "Esto puede tomar 10-20 minutos. MOSTRANDO TODOS LOS ERRORES..."
 
 cd "$REDMINE_DIR"
@@ -444,19 +515,31 @@ fi
 echo "✓ Gemfile encontrado"
 echo ""
 
+# Limpiar configuración previa de bundler para evitar conflictos
+log "Limpiando configuración previa de bundler..."
+sudo -u "$REDMINE_USER" bash -c "cd '$REDMINE_DIR' && rm -rf .bundle/config Gemfile.lock vendor/bundle" 2>/dev/null || true
+echo "✓ Cache limpiado"
+echo ""
+
 # Configurar bundler - VISIBLE EN CONSOLA
 log "Configurando bundler..."
 echo "  - without: 'development test'"
 echo "  - path: 'vendor/bundle'"
 echo "  - timeout: 300"
-echo "  - max_retries: 5"
+echo "  - retry: 10"
+echo "  - jobs: 1 (para evitar problemas de concurrencia)"
 echo ""
 
 sudo -u "$REDMINE_USER" bash -c "cd '$REDMINE_DIR' && \
   bundle config set --local without 'development test' && \
   bundle config set --local path 'vendor/bundle' && \
+  bundle config set --local retry 10 && \
   bundle config set --local timeout 300 && \
-  bundle config set --local max_retries 5" 2>&1 | sed 's/^/  [bundler config] /'
+  bundle config set --local jobs 1" 2>&1 | sed 's/^/  [bundler config] /'
+
+# Configuración adicional para problemas de red/SSL
+echo ""
+log "Configuración de bundler completada"
 
 echo ""
 log "Iniciando bundle install..."
@@ -465,7 +548,7 @@ echo ""
 # Variable para rastrear éxito
 BUNDLE_SUCCESS=false
 ATTEMPT=0
-MAX_ATTEMPTS=1
+MAX_ATTEMPTS=3  # Aumentado de 1 a 3 para manejar problemas de red
 
 # LOOP DE REINTENTOS CON SALIDA VISIBLE
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ] && [ "$BUNDLE_SUCCESS" = "false" ]; do
@@ -479,7 +562,8 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ] && [ "$BUNDLE_SUCCESS" = "false" ]; do
     # Limpiar lock si no es el primer intento
     if [ $ATTEMPT -gt 1 ]; then
         echo "Limpiando estado anterior..."
-        sudo -u "$REDMINE_USER" bash -c "cd '$REDMINE_DIR' && rm -f Gemfile.lock .bundle/config" 2>/dev/null || true
+        # Solo limpiar Gemfile.lock, NO .bundle/config (contiene timeouts configurados)
+        sudo -u "$REDMINE_USER" bash -c "cd '$REDMINE_DIR' && rm -f Gemfile.lock" 2>/dev/null || true
         echo "Esperando 10 segundos antes de reintentar..."
         sleep 10
     fi
@@ -491,9 +575,9 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ] && [ "$BUNDLE_SUCCESS" = "false" ]; do
     if sudo -u "$REDMINE_USER" bash -c "
         cd '$REDMINE_DIR'
         export MALLOC_ARENA_MAX=2
-        export BUNDLE_RETRY=5
-        export BUNDLE_JOBS=2
-        bundle install --retry 5 --jobs 2
+        export BUNDLE_TIMEOUT=300
+        export GEM_HTTP_TIMEOUT=300
+        bundle install --jobs 1 --retry 10 --verbose
     "; then
         
         BUNDLE_SUCCESS=true
@@ -545,6 +629,47 @@ if [ "$BUNDLE_SUCCESS" = "true" ]; then
         done
     fi
     
+    # VERIFICACIÓN ADICIONAL: Asegurar que bundle check pase
+    echo ""
+    echo "Verificando integridad completa de bundle..."
+    if sudo -u "$REDMINE_USER" bash -c "cd $REDMINE_DIR && bundle check 2>&1"; then
+        echo "✓ Bundle check PASÓ - Todas las gemas están correctamente instaladas"
+    else
+        echo "❌ Bundle check FALLÓ - Reintentando bundle install..."
+        if sudo -u "$REDMINE_USER" bash -c "cd $REDMINE_DIR && bundle install --jobs 1 --retry 3 2>&1"; then
+            echo "✓ Bundle install completado en segundo intento"
+        else
+            warning "Bundle check aún falla - puede haber problemas en migraciones"
+        fi
+    fi
+    
+    # VERIFICACIÓN CRÍTICA: config.ru debe existir para Passenger
+    echo ""
+    echo "Verificando config.ru (requerido por Passenger)..."
+    if [ ! -f "$REDMINE_DIR/config.ru" ]; then
+        echo "❌ config.ru NO EXISTE - Passenger no podrá iniciar la aplicación"
+        error "config.ru no encontrado en $REDMINE_DIR - Redmine no se descargó correctamente"
+    else
+        echo "✓ config.ru existe"
+        echo "  Primeras líneas:"
+        head -5 "$REDMINE_DIR/config.ru" | sed 's/^/    /'
+    fi
+    
+    # VERIFICACIÓN CRÍTICA: Gemfile.lock debe haberse creado
+    echo ""
+    echo "Verificando Gemfile.lock (indica bundle install exitoso)..."
+    if [ ! -f "$REDMINE_DIR/Gemfile.lock" ]; then
+        echo "❌ Gemfile.lock NO EXISTE - bundle install no completó correctamente"
+        error "Gemfile.lock no se creó - bundle install falló silenciosamente"
+    else
+        echo "✓ Gemfile.lock existe"
+        LOCK_SIZE=$(stat -c%s "$REDMINE_DIR/Gemfile.lock" 2>/dev/null || echo "0")
+        echo "  Tamaño: $LOCK_SIZE bytes"
+        if [ "$LOCK_SIZE" -lt 1000 ]; then
+            warning "Gemfile.lock parece muy pequeño - puede estar incompleto"
+        fi
+    fi
+    
     success "Gemas instaladas correctamente"
 else
     echo "❌ BUNDLE INSTALL FALLÓ DESPUÉS DE $MAX_ATTEMPTS INTENTOS"
@@ -583,25 +708,88 @@ echo "═══ FIN BUNDLE INSTALL ═══"
 echo ""
 
 # =============================================================================
-# PASO 11: CONFIGURAR BASE DE DATOS Y COMPILAR ASSETS
+# PASO 10.5: GENERAR SECRET TOKEN (CRÍTICO - REQUERIDO ANTES DE MIGRACIONES)
 # =============================================================================
 
 log ""
-log "[11/12] Configurando base de datos..."
+log "[10.5/13] Generando secret token..."
 
-log "  Preparando secrets.yml (Redmine 6.0+)..."
+echo ""
+echo "═══ GENERACIÓN DE SECRET TOKEN (CRÍTICO PARA RAILS) ═══"
+echo ""
+
+# Crear secrets.yml desde template si no existe
 if [ ! -f "$REDMINE_DIR/config/secrets.yml" ]; then
+    log "  secrets.yml no existe. Creando desde template..."
+    
     if [ -f "$REDMINE_DIR/config/secrets.yml.example" ]; then
         cp "$REDMINE_DIR/config/secrets.yml.example" "$REDMINE_DIR/config/secrets.yml"
         chown "$REDMINE_USER:$REDMINE_GROUP" "$REDMINE_DIR/config/secrets.yml"
         chmod 640 "$REDMINE_DIR/config/secrets.yml"
-        log "✓ secrets.yml creado"
+        log "  ✓ secrets.yml.example copiado"
     else
-        warning "⚠ No se encontró secrets.yml.example"
+        log "  ⚠ secrets.yml.example no encontrado, creando vacío..."
+        touch "$REDMINE_DIR/config/secrets.yml"
+        chown "$REDMINE_USER:$REDMINE_GROUP" "$REDMINE_DIR/config/secrets.yml"
+        chmod 640 "$REDMINE_DIR/config/secrets.yml"
     fi
-else
-    log "✓ secrets.yml ya existe"
 fi
+
+# Generar secret token usando Rails (método para Redmine 6.0+)
+log "  Generando nuevo secret token con Rails..."
+
+SECRET_TOKEN=$(sudo -u "$REDMINE_USER" bash -c "
+    cd $REDMINE_DIR
+    export RAILS_ENV=production
+    export RAILS_LOG_LEVEL=error
+    bundle exec rails secret 2>&1 | grep -vE "INFO|WARN|Pathname" | tail -n 1
+" | tr -d '[:space:]')
+
+if [ -n "$SECRET_TOKEN" ] && [ ${#SECRET_TOKEN} -gt 32 ]; then
+    log "  ✓ Secret token generado (${#SECRET_TOKEN} caracteres)"
+    
+    # Crear secrets.yml con el nuevo secret
+    sudo -u "$REDMINE_USER" bash -c "cat > $REDMINE_DIR/config/secrets.yml" <<EOF
+# Secrets for Redmine
+# Generated automatically during installation
+
+production:
+  secret_key_base: $SECRET_TOKEN
+EOF
+    
+    chmod 640 "$REDMINE_DIR/config/secrets.yml"
+    chown "$REDMINE_USER:$REDMINE_GROUP" "$REDMINE_DIR/config/secrets.yml"
+    
+    echo "✓ Secret token guardado en secrets.yml"
+    success "Secret token configurado correctamente"
+else
+    warning "⚠ No se pudo generar secret token con 'rails secret'"
+    log "  Intentando método legacy (rake generate_secret_token)..."
+    
+    if sudo -u "$REDMINE_USER" bash -c "
+        cd $REDMINE_DIR
+        export RAILS_ENV=production
+        bundle exec rake generate_secret_token 2>&1
+    " | grep -q "secret"; then
+        log "  ✓ Secret token generado (método legacy)"
+        success "Secret token configurado (método legacy)"
+    else
+        warning "⚠ Secret token no se pudo generar automáticamente"
+        echo "⚠ ADVERTENCIA: Puede necesitar configurar secrets.yml manualmente"
+        echo "  Esto puede causar errores en migraciones o error 500 en Passenger"
+    fi
+fi
+
+echo ""
+echo "═══ FIN GENERACIÓN DE SECRET TOKEN ═══"
+echo ""
+
+# =============================================================================
+# PASO 11: CONFIGURAR BASE DE DATOS Y COMPILAR ASSETS
+# =============================================================================
+
+log ""
+log "[11/13] Configurando base de datos..."
 
 log "  Preparando configuration.yml..."
 if [ ! -f "$REDMINE_DIR/config/configuration.yml" ]; then
@@ -646,13 +834,15 @@ while [ $MIGRATE_ATTEMPTS -lt 3 ] && [ "$MIGRATE_SUCCESS" = "false" ]; do
         continue
     fi
     echo "  ✓ Conectividad OK"
-    
-    # Intentar con bundle exec (método recomendado)
+
+    # Intentar migración principal
     if sudo -u "$REDMINE_USER" bash -c "
         cd $REDMINE_DIR
         export RAILS_ENV=production
+        export REDMINE_LANG=$REDMINE_LANG
         export BUNDLE_GEMFILE=$REDMINE_DIR/Gemfile
-        bundle exec rails db:migrate 2>&1
+        export RAILS_LOG_LEVEL=error
+        bundle exec rails db:migrate 2>&1 | grep -vE 'INFO --|Pathname|current step'
     "; then
         echo "✓ Migraciones completadas"
         MIGRATE_SUCCESS=true
@@ -662,13 +852,17 @@ while [ $MIGRATE_ATTEMPTS -lt 3 ] && [ "$MIGRATE_SUCCESS" = "false" ]; do
         
         # Capturar más detalles del error
         echo ""
-        echo "📋 Intentando obtener más detalles del error..."
+        echo "📋 DIAGNÓSTICO DE ERROR DE MIGRACIÓN:"
+        echo "----------------------------------------"
         sudo -u "$REDMINE_USER" bash -c "
             cd $REDMINE_DIR
             export RAILS_ENV=production
             export BUNDLE_GEMFILE=$REDMINE_DIR/Gemfile
-            bundle exec rake db:migrate --trace 2>&1 | tail -30
+            export RAILS_LOG_LEVEL=error
+            # Usar trace para ver el error real, filtrando ruido
+            bundle exec rails db:migrate --trace 2>&1 | grep -vE 'INFO --|Pathname|current step' | head -n 50
         " || true
+        echo "----------------------------------------"
         
         if [ $MIGRATE_ATTEMPTS -lt 3 ]; then
             echo "  Esperando 10 segundos antes de reintentar..."
@@ -794,7 +988,7 @@ success "Base de datos configurada"
 # =============================================================================
 
 log ""
-log "[11.5/12] Validando configuración antes de Passenger..."
+log "[11.5/13] Validando configuración antes de Passenger..."
 echo ""
 echo "═══ VALIDACIÓN CRÍTICA - SALIDA VISIBLE ═══"
 
@@ -858,7 +1052,7 @@ fi
 
 echo ""
 log "  Verificando conectividad a MySQL desde www-data..."
-if sudo -u "$REDMINE_USER" bash -c "mysql -h localhost -u redmine -pRedminePass123! -e 'SELECT 1;' redmine >/dev/null 2>&1"; then
+if sudo -u "$REDMINE_USER" bash -c "mysql -h localhost -u redmine -pRedmine2024Pass -e 'SELECT 1;' redmine >/dev/null 2>&1"; then
     echo "✓ Conexión MySQL OK"
 else
     echo "❌ NO PUEDE CONECTAR A MYSQL"
@@ -923,7 +1117,7 @@ success "Validación pre-Passenger completada"
 # =============================================================================
 
 log ""
-log "[12/12] Configurando Apache..."
+log "[12/13] Configurando Apache (Paso Final)..."
 echo ""
 echo "═══ CONFIGURACIÓN DE APACHE - SALIDA VISIBLE ═══"
 
@@ -953,6 +1147,41 @@ else
 fi
 
 echo ""
+log "  Verificando que el módulo Passenger esté cargado..."
+if apache2ctl -M 2>/dev/null | grep -q passenger; then
+    echo "✓ Módulo Passenger ESTÁ CARGADO en Apache"
+else
+    echo "❌ CRÍTICO: Módulo Passenger NO ESTÁ CARGADO"
+    echo "  Intentando solucionar..."
+    
+    # Intentar forzar carga del módulo
+    if [ -f /etc/apache2/mods-available/passenger.load ]; then
+        echo "  Forzando habilitación del módulo..."
+        a2enmod passenger 2>&1
+        systemctl restart apache2
+        sleep 3
+        
+        # Verificar nuevamente
+        if apache2ctl -M 2>/dev/null | grep -q passenger; then
+            echo "✓ Módulo Passenger cargado exitosamente"
+        else
+            error "No se pudo cargar el módulo Passenger - reinstalar libapache2-mod-passenger"
+        fi
+    else
+        error "Archivo passenger.load no encontrado - libapache2-mod-passenger no está instalado"
+    fi
+fi
+
+# Validación adicional de Passenger
+echo ""
+log "  Validando instalación de Passenger..."
+if passenger-config validate-install --auto 2>/dev/null; then
+    echo "✓ Passenger validado correctamente"
+else
+    warning "Passenger puede tener problemas de configuración"
+fi
+
+echo ""
 log "  Configurando sitio virtual Redmine..."
 
 cat > /etc/apache2/sites-available/redmine.conf <<EOF
@@ -960,6 +1189,8 @@ cat > /etc/apache2/sites-available/redmine.conf <<EOF
     ServerName localhost
     ServerAlias *
     ServerAdmin admin@redmine.local
+    
+    # DocumentRoot DEBE apuntar al directorio public de Redmine
     DocumentRoot /usr/share/redmine/public
 
     <Directory /usr/share/redmine>
@@ -969,7 +1200,7 @@ cat > /etc/apache2/sites-available/redmine.conf <<EOF
     </Directory>
 
     <Directory /usr/share/redmine/public>
-        Options -Indexes FollowSymLinks MultiViews
+        Options -Indexes +FollowSymLinks +MultiViews
         AllowOverride All
         Require all granted
     </Directory>
@@ -979,8 +1210,10 @@ cat > /etc/apache2/sites-available/redmine.conf <<EOF
     LogLevel warn
 
     # Configuración de Passenger - CRÍTICO
+    PassengerEnabled on
     PassengerAppRoot /usr/share/redmine
     PassengerAppType rack
+    PassengerStartupFile config.ru
     PassengerUser www-data
     PassengerGroup www-data
     PassengerRuby $(which ruby)
@@ -990,14 +1223,9 @@ cat > /etc/apache2/sites-available/redmine.conf <<EOF
     # Variables de entorno para Ruby y Passenger
     SetEnv RAILS_ENV production
     SetEnv RACK_ENV production
-    SetEnv BUNDLE_DEPLOYMENT true
-    SetEnv BUNDLE_PATH /usr/share/redmine/vendor/bundle
+    SetEnv BUNDLE_GEMFILE /usr/share/redmine/Gemfile
     
-    # Optimizaciones de Passenger
-    PassengerMinInstances 1
-    PassengerMaxPoolSize 4
-    PassengerPoolIdleTime 0
-    PassengerStartTimeout 90
+
 </VirtualHost>
 EOF
 echo "✓ redmine.conf creado"
@@ -1081,7 +1309,7 @@ echo ""
 
 log "1. Verificando acceso HTTP a Redmine..."
 sleep 3
-RESPONSE=$(curl -s -i "http://localhost/redmine" 2>/dev/null | head -1)
+RESPONSE=$(curl -s -i "http://localhost/" 2>/dev/null | head -1)
 echo "   Respuesta del servidor: $RESPONSE"
 
 if echo "$RESPONSE" | grep -q "200"; then
@@ -1145,7 +1373,7 @@ echo "✓ REDMINE 6.1.1 - INSTALACIÓN COMPLETADA"
 echo "───────────────────────────────────────────────────────────────"
 echo ""
 echo "ACCESO INICIAL:"
-echo "  URL: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')/redmine"
+echo "  URL: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')/"
 echo "  Usuario: admin"
 echo "  Contraseña: admin"
 echo ""
