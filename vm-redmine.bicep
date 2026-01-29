@@ -3,19 +3,11 @@ param adminUsername string = 'azureuser'
 
 @secure()
 @description('Contraseña del administrador')
-param adminPassword string  = 'ContrasenaSegura123!'
+param adminPassword string = 'ContrasenaSegura123!'
 
 @description('Ubicación de los recursos')
 param location string = 'westus3'
 
-@description('Nombre del grupo de recursos')
-param resourceGroupName string = 'rg-redmine'
-
-// Crear un nuevo grupo de recursos
-resource newRG 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: resourceGroupName
-  location: location
-}
 // Red Virtual
 resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   name: 'redmine-vnet'
@@ -49,13 +41,50 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2022-05-01' = {
   }
 }
 
-
+// Network Security Group
+resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
+  name: 'redmine-nsg'
+  location: location
+  properties: {
+    securityRules: [
+      {
+        name: 'SSH'
+        properties: {
+          priority: 1000
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '22'
+        }
+      }
+      {
+        name: 'HTTP'
+        properties: {
+          priority: 1010
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '80'
+        }
+      }
+    ]
+  }
+}
 
 // NIC
 resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
   name: 'redmine-nic'
   location: location
   properties: {
+    networkSecurityGroup: {
+      id: nsg.id
+    }
     ipConfigurations: [
       {
         name: 'ipconfig1'
@@ -78,33 +107,25 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   location: location
   properties: {
     hardwareProfile: {
-      // <- Quitar cualquier espacio/tab antes del nombre
-      vmSize: 'Standard_B1s'
+      vmSize: 'Standard_B2s'
     }
     osProfile: {
       computerName: 'redmine'
       adminUsername: adminUsername
       adminPassword: adminPassword
-      // --- Opcional: customData (base64) si tu script es corto y no contiene secretos
-      customData: base64(loadTextContent('install-redmine.sh'))
-      // --- Recomendado: linuxConfiguration explícito
+      customData: base64('''#!/bin/bash
+      # Descargar y ejecutar script desde GitHub
+      curl -sL https://raw.githubusercontent.com/Santi9090/bicep-redmine/main/install-redmine.sh | sudo bash
+      ''')
       linuxConfiguration: {
-        disablePasswordAuthentication: false // o true si vas a usar SSH keys
-        // ssh: {
-        //   publicKeys: [
-        //     {
-        //       path: '/home/azureuser/.ssh/authorized_keys'
-        //       keyData: 'ssh-rsa AAAA...'
-        //     }
-        //   ]
-        // }
+        disablePasswordAuthentication: false
       }
     }
     storageProfile: {
       imageReference: {
         publisher: 'Canonical'
-        offer: '0001-com-ubuntu-server-focal'
-        sku: '20_04-lts'
+        offer: 'ubuntu-24_04-lts'
+        sku: 'server'
         version: 'latest'
       }
       osDisk: {
@@ -120,6 +141,5 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     }
   }
 }
-
 
 output publicIpAddress string = publicIp.properties.ipAddress

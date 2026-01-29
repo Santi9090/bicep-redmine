@@ -1,3 +1,8 @@
+
+Crea Grupo de recursos 
 az group create --name rg-redmine --location westus3
 
+Despliega la VM  con el script
 az deployment group create --resource-group rg-redmine --name vm-redmine  --template-file vm-redmine.bicep 
+
+tail -f /var/log/cloud-init-output.log

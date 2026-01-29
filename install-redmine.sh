@@ -206,21 +206,31 @@ done
 success "Dependencias base instaladas"
 
 # =============================================================================
-# PASO 3: INSTALAR RUBY
+# PASO 3: INSTALAR RUBY 3.2
 # =============================================================================
 
 log ""
-log "[3/13] Instalando Ruby..."
+log "[3/13] Instalando Ruby 3.2..."
 
-if ! command -v ruby &> /dev/null; then
-    apt-get install -y ruby ruby-dev ruby-bundler >> "$LOG_FILE" 2>&1 || error "Error instalando Ruby"
+# Verificar si Ruby ya está instalado y es la versión 3.2
+CURRENT_RUBY_VER=$(ruby --version 2>/dev/null | awk '{print $2}' | cut -d. -f1,2 || echo "none")
+
+if [ "$CURRENT_RUBY_VER" != "3.2" ]; then
+    log "  Ruby 3.2 no encontrado (actual: $CURRENT_RUBY_VER). Instalando..."
+    # En Ubuntu 24.04, ruby3.2 está disponible en los repositorios oficiales
+    apt-get install -y ruby3.2 ruby3.2-dev ruby-bundler >> "$LOG_FILE" 2>&1 || {
+        log "  Intentando instalar versión genérica de ruby..."
+        apt-get install -y ruby ruby-dev ruby-bundler >> "$LOG_FILE" 2>&1 || error "Error instalando Ruby"
+    }
+else
+    log "  Ruby 3.2 ya está instalado."
 fi
 
 RUBY_VERSION=$(ruby --version 2>/dev/null | awk '{print $2}' | cut -d. -f1,2)
-log "  Ruby versión: $(ruby --version 2>/dev/null)"
+log "  Ruby versión final: $(ruby --version 2>/dev/null)"
 
-if ! echo "$RUBY_VERSION" | grep -qE "^3\.[2-4]"; then
-    warning "Ruby $RUBY_VERSION - se recomienda 3.2+ para Redmine 6.1"
+if [ "$RUBY_VERSION" != "3.2" ]; then
+    warning "Ruby $RUBY_VERSION detectado - se recomienda estrictamente 3.2 para esta configuración de Redmine 6.1"
 fi
 
 if ! command -v bundle &> /dev/null; then
