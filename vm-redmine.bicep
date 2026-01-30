@@ -1,16 +1,22 @@
-@description('Nombre de usuario administrador')
+@description('Name of the Virtual Machine.')
+param virtualMachineName string = 'redmine-vm'
+
+@description('Azure region where the resources will be deployed.')
+param location string = resourceGroup().location
+
+@description('Size of the Virtual Machine.')
+param virtualMachineSize string = 'Standard_B2s'
+
+@description('Administrator username for the Virtual Machine.')
 param adminUsername string = 'azureuser'
 
+@description('SSH Public Key for the Administrator user.')
 @secure()
-@description('Contraseña del administrador')
-param adminPassword string = 'ContrasenaSegura123!'
-
-@description('Ubicación de los recursos')
-param location string = 'westus3'
+param adminPublicKey string
 
 // Red Virtual
 resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
-  name: 'redmine-vnet'
+  name: '${virtualMachineName}-vnet'
   location: location
   properties: {
     addressSpace: {
@@ -31,7 +37,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
 
 // IP Pública
 resource publicIp 'Microsoft.Network/publicIPAddresses@2022-05-01' = {
-  name: 'redmine-ip'
+  name: '${virtualMachineName}-ip'
   location: location
   sku: {
     name: 'Standard'
@@ -43,7 +49,7 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2022-05-01' = {
 
 // Network Security Group
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
-  name: 'redmine-nsg'
+  name: '${virtualMachineName}-nsg'
   location: location
   properties: {
     securityRules: [
@@ -79,7 +85,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
 
 // NIC
 resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
-  name: 'redmine-nic'
+  name: '${virtualMachineName}-nic'
   location: location
   properties: {
     networkSecurityGroup: {
@@ -101,24 +107,32 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
     ]
   }
 }
-// Máquina Virtual (corregido)
+
+// Máquina Virtual
 resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
-  name: 'redmine-vm'
+  name: virtualMachineName
   location: location
   properties: {
     hardwareProfile: {
-      vmSize: 'Standard_B2s'
+      vmSize: virtualMachineSize
     }
     osProfile: {
-      computerName: 'redmine'
+      computerName: virtualMachineName
       adminUsername: adminUsername
-      adminPassword: adminPassword
       customData: base64('''#!/bin/bash
       # Descargar y ejecutar script desde GitHub
       curl -sL https://raw.githubusercontent.com/Santi9090/bicep-redmine/main/install-redmine.sh | sudo bash
       ''')
       linuxConfiguration: {
-        disablePasswordAuthentication: false
+        disablePasswordAuthentication: true
+        ssh: {
+          publicKeys: [
+            {
+              path: '/home/${adminUsername}/.ssh/authorized_keys'
+              keyData: adminPublicKey
+            }
+          ]
+        }
       }
     }
     storageProfile: {
@@ -130,6 +144,9 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
       }
       osDisk: {
         createOption: 'FromImage'
+        managedDisk: {
+          storageAccountType: 'Standard_LRS'
+        }
       }
     }
     networkProfile: {
