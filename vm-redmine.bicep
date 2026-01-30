@@ -10,9 +10,20 @@ param virtualMachineSize string = 'Standard_B2s'
 @description('Administrator username for the Virtual Machine.')
 param adminUsername string = 'azureuser'
 
-@description('SSH Public Key for the Administrator user.')
+@description('Type of authentication to use on the Virtual Machine.')
+@allowed([
+  'sshPublicKey'
+  'password'
+])
+param authenticationType string = 'sshPublicKey'
+
+@description('SSH Public Key for the Administrator user (required if authenticationType is sshPublicKey).')
 @secure()
-param adminPublicKey string
+param adminPublicKey string = ''
+
+@description('Password for the Administrator user (required if authenticationType is password).')
+@secure()
+param adminPassword string = ''
 
 // Red Virtual
 resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
@@ -119,20 +130,23 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     osProfile: {
       computerName: virtualMachineName
       adminUsername: adminUsername
+      adminPassword: adminPassword
       customData: base64('''#!/bin/bash
       # Descargar y ejecutar script desde GitHub
       curl -sL https://raw.githubusercontent.com/Santi9090/bicep-redmine/main/install-redmine.sh | sudo bash
       ''')
       linuxConfiguration: {
-        disablePasswordAuthentication: true
-        ssh: {
-          publicKeys: [
-            {
-              path: '/home/${adminUsername}/.ssh/authorized_keys'
-              keyData: adminPublicKey
+        disablePasswordAuthentication: (authenticationType == 'sshPublicKey')
+        ssh: (authenticationType == 'sshPublicKey')
+          ? {
+              publicKeys: [
+                {
+                  path: '/home/${adminUsername}/.ssh/authorized_keys'
+                  keyData: adminPublicKey
+                }
+              ]
             }
-          ]
-        }
+          : null
       }
     }
     storageProfile: {

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "9702126282981065279"
+      "templateHash": "8905743701257695404"
     }
   },
   "parameters": {
@@ -37,10 +37,29 @@
         "description": "Administrator username for the Virtual Machine."
       }
     },
+    "authenticationType": {
+      "type": "string",
+      "defaultValue": "sshPublicKey",
+      "allowedValues": [
+        "sshPublicKey",
+        "password"
+      ],
+      "metadata": {
+        "description": "Type of authentication to use on the Virtual Machine."
+      }
+    },
     "adminPublicKey": {
       "type": "securestring",
+      "defaultValue": "",
       "metadata": {
-        "description": "SSH Public Key for the Administrator user."
+        "description": "SSH Public Key for the Administrator user (required if authenticationType is sshPublicKey)."
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Password for the Administrator user (required if authenticationType is password)."
       }
     }
   },
@@ -156,17 +175,11 @@
         "osProfile": {
           "computerName": "[parameters('virtualMachineName')]",
           "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
           "customData": "[base64('#!/bin/bash\r\n      # Descargar y ejecutar script desde GitHub\r\n      curl -sL https://raw.githubusercontent.com/Santi9090/bicep-redmine/main/install-redmine.sh | sudo bash\r\n      ')]",
           "linuxConfiguration": {
-            "disablePasswordAuthentication": true,
-            "ssh": {
-              "publicKeys": [
-                {
-                  "path": "[format('/home/{0}/.ssh/authorized_keys', parameters('adminUsername'))]",
-                  "keyData": "[parameters('adminPublicKey')]"
-                }
-              ]
-            }
+            "disablePasswordAuthentication": "[equals(parameters('authenticationType'), 'sshPublicKey')]",
+            "ssh": "[if(equals(parameters('authenticationType'), 'sshPublicKey'), createObject('publicKeys', createArray(createObject('path', format('/home/{0}/.ssh/authorized_keys', parameters('adminUsername')), 'keyData', parameters('adminPublicKey')))), null())]"
           }
         },
         "storageProfile": {
