@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "8905743701257695404"
+      "templateHash": "13441253203176430983"
     }
   },
   "parameters": {
@@ -37,29 +37,10 @@
         "description": "Administrator username for the Virtual Machine."
       }
     },
-    "authenticationType": {
-      "type": "string",
-      "defaultValue": "sshPublicKey",
-      "allowedValues": [
-        "sshPublicKey",
-        "password"
-      ],
-      "metadata": {
-        "description": "Type of authentication to use on the Virtual Machine."
-      }
-    },
-    "adminPublicKey": {
-      "type": "securestring",
-      "defaultValue": "",
-      "metadata": {
-        "description": "SSH Public Key for the Administrator user (required if authenticationType is sshPublicKey)."
-      }
-    },
     "adminPassword": {
       "type": "securestring",
-      "defaultValue": "",
       "metadata": {
-        "description": "Password for the Administrator user (required if authenticationType is password)."
+        "description": "Password for the Administrator user."
       }
     }
   },
@@ -178,8 +159,7 @@
           "adminPassword": "[parameters('adminPassword')]",
           "customData": "[base64('#!/bin/bash\r\n      # Descargar y ejecutar script desde GitHub\r\n      curl -sL https://raw.githubusercontent.com/Santi9090/bicep-redmine/main/install-redmine.sh | sudo bash\r\n      ')]",
           "linuxConfiguration": {
-            "disablePasswordAuthentication": "[equals(parameters('authenticationType'), 'sshPublicKey')]",
-            "ssh": "[if(equals(parameters('authenticationType'), 'sshPublicKey'), createObject('publicKeys', createArray(createObject('path', format('/home/{0}/.ssh/authorized_keys', parameters('adminUsername')), 'keyData', parameters('adminPublicKey')))), null())]"
+            "disablePasswordAuthentication": false
           }
         },
         "storageProfile": {

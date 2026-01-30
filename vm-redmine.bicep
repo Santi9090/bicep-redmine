@@ -10,20 +10,9 @@ param virtualMachineSize string = 'Standard_B2s'
 @description('Administrator username for the Virtual Machine.')
 param adminUsername string = 'azureuser'
 
-@description('Type of authentication to use on the Virtual Machine.')
-@allowed([
-  'sshPublicKey'
-  'password'
-])
-param authenticationType string = 'sshPublicKey'
-
-@description('SSH Public Key for the Administrator user (required if authenticationType is sshPublicKey).')
+@description('Password for the Administrator user.')
 @secure()
-param adminPublicKey string = ''
-
-@description('Password for the Administrator user (required if authenticationType is password).')
-@secure()
-param adminPassword string = ''
+param adminPassword string
 
 // Red Virtual
 resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
@@ -136,17 +125,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
       curl -sL https://raw.githubusercontent.com/Santi9090/bicep-redmine/main/install-redmine.sh | sudo bash
       ''')
       linuxConfiguration: {
-        disablePasswordAuthentication: (authenticationType == 'sshPublicKey')
-        ssh: (authenticationType == 'sshPublicKey')
-          ? {
-              publicKeys: [
-                {
-                  path: '/home/${adminUsername}/.ssh/authorized_keys'
-                  keyData: adminPublicKey
-                }
-              ]
-            }
-          : null
+        disablePasswordAuthentication: false
       }
     }
     storageProfile: {
